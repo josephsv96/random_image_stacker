@@ -1,5 +1,11 @@
+"""Paths of background images and foreground images should be given.
+The images should either be seperate PNG files or NPY files. For BMP files,
+alpha channel will be added to make it work.
+The main program relies on the alpha channel to make the annotation.
+"""
+
 import numpy as np
-# import cv2
+import cv2
 # import imgaug
 # import glob
 # import random
@@ -8,6 +14,12 @@ import numpy as np
 
 # from imgaug import augmenters as iaa
 from PIL import Image
+
+
+# from random import seed
+from random import randint
+# from random import random
+# seed(1)
 
 
 def img_arr_from_path(img_paths, img_scaling):
@@ -31,7 +43,11 @@ def img_arr_from_path(img_paths, img_scaling):
         img = Image.open(img_path)
         img = img.resize(img_scaling)
         img = np.array(img, dtype=np.float32)
-        img_arr[i, :, :, :] = img
+        if img.shape[-1] == 3:
+            img_arr[i, :, :, :3] = img
+            img_arr[i, :, :, 3].fill(255)
+        else:
+            img_arr[i, :, :, :] = img
 
     return img_arr
 
@@ -51,8 +67,8 @@ def load_bg_fg(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
         bg_arr {numpy.array} -- Image array of bg images
         bg_arr {numpy.array} -- Image array of bg images
     """
-    bg_img_paths = list(bg_img_dir.glob('**/*.png'))
-    fg_img_paths = list(fg_img_dir.glob('**/*.png'))
+    bg_img_paths = list(bg_img_dir.glob('**/*.bmp'))
+    fg_img_paths = list(fg_img_dir.glob('**/*.bmp'))
 
     bg_arr = img_arr_from_path(bg_img_paths, bg_scaling)
     print('bg_arr', bg_arr.shape)
@@ -61,3 +77,119 @@ def load_bg_fg(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
     print('fg_arr', fg_arr.shape)
 
     return bg_arr, fg_arr
+
+
+# REFACTORED UNTIL HERE
+
+
+def rand_pos_gen(aug_config):
+    # rename to random_val_gen
+
+    # Initializing config
+    base_x = aug_config['base_x']
+    base_y = aug_config['base_y']
+    x_var = aug_config['x_var']
+    y_var = aug_config['y_var']
+    w_init = aug_config['w_init']
+    h_init = aug_config['h_init']
+    w_var = aug_config['w_var']
+    h_var = aug_config['h_var']
+
+    # Generate random positions
+    # within the base limits
+    x_init = base_x + int(np.random.randn(1) * x_var)
+    y_init = base_y + int(np.random.randn(1) * y_var)  # on the base
+
+    # Generate random sizing
+    # within the base limits
+    w_rand = w_init + int(np.random.randn(1) * w_var)
+    h_rand = h_init + int(np.random.randn(1) * h_var)  # on the base
+
+    return [x_init, y_init, w_rand, h_rand]
+
+
+# Should also return box label
+
+def random_box(img_arr):
+    # ADD LABELS ARRAY AS ARGUMENT HERE
+    LABELS_EXP1 = np.arange(0, img_arr.shape[0])
+    random_index = randint(0, len(img_arr) - 1)
+    return [img_arr[random_index], LABELS_EXP1[random_index]]
+
+
+def place_box(room_img, stud_img, x_lim, y_lim, width, height):
+    x1 = x_lim
+    x2 = x1 + width
+    y1 = y_lim
+    y2 = y1 + height
+
+    stud_resized = cv2.resize(stud_img, (x2-x1, y2-y1))
+    for i in range(0, y2-y1):
+        for j in range(0, x2-x1):
+            if (stud_resized[i, j, 3] >= 100):
+                room_img[y1+i, x1+j, :] = stud_resized[i, j, :]
+
+    # Creating annotation of that BOX
+    annotation = np.zeros((room_img.shape[0], room_img.shape[1]))
+    stud_annot = stud_resized[:, :, 3]
+    annotation[y1:y2, x1:x2] = stud_annot
+
+    return room_img, annotation, x2, y2
+
+
+def generate_stacked_img(empty_scene, fg_arr, aug_config):
+    # ADD AUGMENTATION CONFIG
+    print('Using aug config:', aug_config)
+    # init_im = empty_scene
+    init_im = np.zeros(empty_scene.shape)
+    annots = []
+
+    # Generating random initial positions
+    [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
+
+    # BOX_1: x_lim => random, y_lim => on the board (small variation)
+    [box, box_class] = random_box(fg_arr)
+    init_im, annot_1, b1_x, b1_y = place_box(
+        init_im, box, x_init, y_init, w_rand, h_rand)
+    annot_1 = annot_1 * box_class
+    annots.append(annot_1)
+
+    # Generating random initial positions
+    [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
+
+    # BOX_2: x_lim => random, y_lim => (y_lim + height) of BOX_1
+    [box, box_class] = random_box(fg_arr)
+    init_im, annot_2, b2_x, b2_y = place_box(
+        init_im, box, x_init, b1_y, w_rand, h_rand)
+    annot_2 = annot_2 * box_class
+    annots.append(annot_2)
+
+    # Generating random initial positions
+    [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
+
+    # BOX_3: x_lim => (x_lim + width) of BOX_1
+    # y_lim => on the board (small variation)
+    [box, box_class] = random_box(fg_arr)
+    init_im, annot_3, b3_x, b3_y = place_box(
+        init_im, box, b1_x, y_init, w_rand, h_rand)
+    annot_3 = annot_3 * box_class
+    annots.append(annot_3)
+
+    # BOX_4: x_lim => min( (x_lim + width) of BOX_1 and BOX_2 )
+    # y_lim => (y_lim + height) of BOX_3
+    [box, box_class] = random_box(fg_arr)
+    init_im, annot_4, b4_x, b4_y = place_box(
+        init_im, box, min(b1_x, b2_x), b3_y, w_rand, h_rand)
+    annot_4 = annot_4 * box_class
+    annots.append(annot_4)
+
+    # Annotations
+    annotations = sum(annots)
+    # Limiting values above (only works when above 6, not ideal)
+    annotations[annotations > 255*6] = 0
+
+    # image = empty_scene + init_im
+    image = init_im
+    ann = annotations
+
+    return image, ann

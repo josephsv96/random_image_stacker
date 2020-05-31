@@ -169,7 +169,7 @@ def place_box(bg_img, fg_img, x_lim, y_lim, width, height):
 
 def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     # ADD randomstate funtionality to reproduce results
-    print('Using aug config:', aug_config)
+    # print('Using aug config:', aug_config)
     # init_im = empty_scene
     init_im = np.zeros(empty_scene.shape)
     annots = []
@@ -182,7 +182,6 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     init_im, annot_1, b1_x, b1_y = place_box(
         init_im, box, x_init, y_init, w_rand, h_rand)
     annot_1 = annot_1 * box_class
-    print(box_class)
     annots.append(annot_1)
 
     # Generating random initial positions
@@ -193,7 +192,6 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     init_im, annot_2, b2_x, b2_y = place_box(
         init_im, box, x_init, b1_y, w_rand, h_rand)
     annot_2 = annot_2 * box_class
-    print(box_class)
     annots.append(annot_2)
 
     # Generating random initial positions
@@ -205,7 +203,6 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     init_im, annot_3, b3_x, b3_y = place_box(
         init_im, box, b1_x, y_init, w_rand, h_rand)
     annot_3 = annot_3 * box_class
-    print(box_class)
     annots.append(annot_3)
 
     # BOX_4: x_lim => min( (x_lim + width) of BOX_1 and BOX_2 )
@@ -214,13 +211,12 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     init_im, annot_4, b4_x, b4_y = place_box(
         init_im, box, min(b1_x, b2_x), b3_y, w_rand, h_rand)
     annot_4 = annot_4 * box_class
-    print(box_class)
     annots.append(annot_4)
 
     # Annotations
     annotations = sum(annots)
-    # Limiting values above (only works when above 6, not ideal)
-    # annotations[annotations > 255*6] = 0
+    # Limiting values above (only works when above 6, not ideal way)
+    annotations[annotations > 6] = 0
 
     # image = empty_scene + init_im
     image = init_im

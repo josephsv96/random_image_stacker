@@ -52,7 +52,7 @@ def img_arr_from_path(img_paths, img_scaling):
     return img_arr
 
 
-def load_bg_fg(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
+def load_bg_fg_img(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
     """To load bg and fg images as numpy arrays
     !!! Warning: Only png image for now.
     Need to convert original images to png to use alpha channel funtionality
@@ -65,7 +65,7 @@ def load_bg_fg(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
 
     Returns:
         bg_arr {numpy.array} -- Image array of bg images
-        bg_arr {numpy.array} -- Image array of bg images
+        fg_arr {numpy.array} -- Image array of fg images
     """
     bg_img_paths = list(bg_img_dir.glob('**/*.bmp'))
     fg_img_paths = list(fg_img_dir.glob('**/*.bmp'))
@@ -77,6 +77,34 @@ def load_bg_fg(bg_img_dir, fg_img_dir, bg_scaling, fg_scaling):
     print('fg_arr', fg_arr.shape)
 
     return bg_arr, fg_arr
+
+
+def labels_from_file(img_dir, delim='_'):
+    """To get labels of images from image file names
+
+    Arguments:
+        img_dir {PosixPath} -- Path of image directory
+
+    Keyword Arguments:
+        delim {str} -- Delimiter in file name (default: {'_'})
+
+    Returns:
+        labels {numpy.array}-- 1-d array of integer class labels
+        label_config {dict} -- Config of class labels
+    """
+    img_paths = list(img_dir.glob('**/*.bmp'))
+    cat_labels = []
+    # To get the first word in file name
+    for i in range(len(img_paths)):
+        cat_labels.append(img_paths[i].stem.split(delim)[0])
+    cat_labels = np.array(cat_labels)
+    labels_unique, labels = np.unique(cat_labels, return_inverse=True)
+
+    # Config
+    label_config_keys = np.unique(labels) + 1
+    label_config = dict(zip(label_config_keys, labels_unique))
+
+    return labels+1, label_config
 
 
 # REFACTORED UNTIL HERE
@@ -110,35 +138,37 @@ def rand_pos_gen(aug_config):
 
 # Should also return box label
 
-def random_box(img_arr):
+def random_box(img_arr, img_labels):
     # ADD LABELS ARRAY AS ARGUMENT HERE
-    LABELS_EXP1 = np.arange(0, img_arr.shape[0])
+    # ANNOTATION DATA DEPEND ON LABELS
+    # img_labels = np.arange(0, img_arr.shape[0])
     random_index = randint(0, len(img_arr) - 1)
-    return [img_arr[random_index], LABELS_EXP1[random_index]]
+    return [img_arr[random_index], img_labels[random_index]]
 
 
-def place_box(room_img, stud_img, x_lim, y_lim, width, height):
+def place_box(bg_img, fg_img, x_lim, y_lim, width, height):
     x1 = x_lim
     x2 = x1 + width
     y1 = y_lim
     y2 = y1 + height
 
-    stud_resized = cv2.resize(stud_img, (x2-x1, y2-y1))
+    fg_resized = cv2.resize(fg_img, (x2-x1, y2-y1))
     for i in range(0, y2-y1):
         for j in range(0, x2-x1):
-            if (stud_resized[i, j, 3] >= 100):
-                room_img[y1+i, x1+j, :] = stud_resized[i, j, :]
+            if (fg_resized[i, j, 3] >= 100):
+                bg_img[y1+i, x1+j, :] = fg_resized[i, j, :]
 
     # Creating annotation of that BOX
-    annotation = np.zeros((room_img.shape[0], room_img.shape[1]))
-    stud_annot = stud_resized[:, :, 3]
-    annotation[y1:y2, x1:x2] = stud_annot
+    # WARNING: Taking the alpha channel as annotation, is decpreciated
+    annotation = np.zeros((bg_img.shape[0], bg_img.shape[1]))
+    fg_annot = fg_resized[:, :, 3]
+    annotation[y1:y2, x1:x2] = fg_annot/255
 
-    return room_img, annotation, x2, y2
+    return bg_img, annotation, x2, y2
 
 
-def generate_stacked_img(empty_scene, fg_arr, aug_config):
-    # ADD AUGMENTATION CONFIG
+def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
+    # ADD randomstate funtionality to reproduce results
     print('Using aug config:', aug_config)
     # init_im = empty_scene
     init_im = np.zeros(empty_scene.shape)
@@ -148,20 +178,22 @@ def generate_stacked_img(empty_scene, fg_arr, aug_config):
     [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
 
     # BOX_1: x_lim => random, y_lim => on the board (small variation)
-    [box, box_class] = random_box(fg_arr)
+    [box, box_class] = random_box(fg_arr, fg_labels)
     init_im, annot_1, b1_x, b1_y = place_box(
         init_im, box, x_init, y_init, w_rand, h_rand)
     annot_1 = annot_1 * box_class
+    print(box_class)
     annots.append(annot_1)
 
     # Generating random initial positions
     [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
 
     # BOX_2: x_lim => random, y_lim => (y_lim + height) of BOX_1
-    [box, box_class] = random_box(fg_arr)
+    [box, box_class] = random_box(fg_arr, fg_labels)
     init_im, annot_2, b2_x, b2_y = place_box(
         init_im, box, x_init, b1_y, w_rand, h_rand)
     annot_2 = annot_2 * box_class
+    print(box_class)
     annots.append(annot_2)
 
     # Generating random initial positions
@@ -169,27 +201,28 @@ def generate_stacked_img(empty_scene, fg_arr, aug_config):
 
     # BOX_3: x_lim => (x_lim + width) of BOX_1
     # y_lim => on the board (small variation)
-    [box, box_class] = random_box(fg_arr)
+    [box, box_class] = random_box(fg_arr, fg_labels)
     init_im, annot_3, b3_x, b3_y = place_box(
         init_im, box, b1_x, y_init, w_rand, h_rand)
     annot_3 = annot_3 * box_class
+    print(box_class)
     annots.append(annot_3)
 
     # BOX_4: x_lim => min( (x_lim + width) of BOX_1 and BOX_2 )
     # y_lim => (y_lim + height) of BOX_3
-    [box, box_class] = random_box(fg_arr)
+    [box, box_class] = random_box(fg_arr, fg_labels)
     init_im, annot_4, b4_x, b4_y = place_box(
         init_im, box, min(b1_x, b2_x), b3_y, w_rand, h_rand)
     annot_4 = annot_4 * box_class
+    print(box_class)
     annots.append(annot_4)
 
     # Annotations
     annotations = sum(annots)
     # Limiting values above (only works when above 6, not ideal)
-    annotations[annotations > 255*6] = 0
+    # annotations[annotations > 255*6] = 0
 
     # image = empty_scene + init_im
     image = init_im
-    ann = annotations
 
-    return image, ann
+    return image, annotations

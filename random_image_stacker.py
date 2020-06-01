@@ -167,14 +167,14 @@ def place_box(bg_img, fg_img, x_lim, y_lim, width, height):
     return bg_img, annotation, x2, y2
 
 
-def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
+def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config, box_num=4):
     # ADD randomstate funtionality to reproduce results
     # print('Using aug config:', aug_config)
     # init_im = empty_scene
     init_im = np.zeros(empty_scene.shape)
     annots = []
 
-    # Generating random initial positions
+    # Generating random initial positions for box 1 => top left
     [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
 
     # BOX_1: x_lim => random, y_lim => on the board (small variation)
@@ -184,7 +184,7 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     annot_1 = annot_1 * box_class
     annots.append(annot_1)
 
-    # Generating random initial positions
+    # Generating random initial positions box 1 => bottom left
     [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
 
     # BOX_2: x_lim => random, y_lim => (y_lim + height) of BOX_1
@@ -194,7 +194,7 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     annot_2 = annot_2 * box_class
     annots.append(annot_2)
 
-    # Generating random initial positions
+    # Generating random initial positions box 1 => top right
     [x_init, y_init, w_rand, h_rand] = rand_pos_gen(aug_config)
 
     # BOX_3: x_lim => (x_lim + width) of BOX_1
@@ -205,20 +205,39 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config):
     annot_3 = annot_3 * box_class
     annots.append(annot_3)
 
-    # BOX_4: x_lim => min( (x_lim + width) of BOX_1 and BOX_2 )
-    # y_lim => (y_lim + height) of BOX_3
-    [box, box_class] = random_box(fg_arr, fg_labels)
-    init_im, annot_4, b4_x, b4_y = place_box(
-        init_im, box, min(b1_x, b2_x), b3_y, w_rand, h_rand)
-    annot_4 = annot_4 * box_class
-    annots.append(annot_4)
+    if box_num == 4:
+        # BOX_4: x_lim => min( (x_lim + width) of BOX_1 and BOX_2 )
+        # y_lim => (y_lim + height) of BOX_3
+        [box, box_class] = random_box(fg_arr, fg_labels)
+        init_im, annot_4, b4_x, b4_y = place_box(
+            init_im, box, min(b1_x, b2_x), b3_y, w_rand, h_rand)
+        annot_4 = annot_4 * box_class
+        annots.append(annot_4)
 
     # Annotations
     annotations = sum(annots)
     # Limiting values above (only works when above 6, not ideal way)
     annotations[annotations > 6] = 0
 
-    # image = empty_scene + init_im
     image = init_im
 
     return image, annotations
+
+
+def overlay_images(src1, src2):
+    """Merge src2 over src1 based on the alpha channel indices of src2
+    !!!Warning: src2 is required to have 4 channels
+
+    Arguments:
+        src1 {numpy.array} -- Base image
+        src2 {numpy.array} -- Overlayed image
+
+    Returns:
+        dst {numpy.array} -- Merged image with 3 output channels
+    """
+    mask = ((src2[:, :, 3] - 255) * -1)/255
+    dst = np.zeros([src1.shape[0], src1.shape[1], 3])
+    for i in range(3):
+        dst[:, :, i] = np.add(src1[:, :, i] * mask, src2[:, :, i])
+
+    return dst

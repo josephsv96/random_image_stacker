@@ -167,10 +167,12 @@ def place_box(bg_img, fg_img, x_lim, y_lim, width, height):
     return bg_img, annotation, x2, y2
 
 
-def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config, box_num=4):
+def generate_stacked_img(bg_arr, fg_arr, fg_labels, aug_config, box_num=4):
     # ADD randomstate funtionality to reproduce results
     # print('Using aug config:', aug_config)
     # init_im = empty_scene
+    # WRONG!! bg_arr should also come with labels
+    empty_scene, _ = random_box(bg_arr, fg_arr)
     init_im = np.zeros(empty_scene.shape)
     annots = []
 
@@ -221,7 +223,7 @@ def generate_stacked_img(empty_scene, fg_arr, fg_labels, aug_config, box_num=4):
 
     image = init_im
 
-    return image, annotations
+    return image, annotations, empty_scene
 
 
 def overlay_images(src1, src2):
@@ -244,9 +246,10 @@ def overlay_images(src1, src2):
 
 
 def random_overlay(bg_arr, fg_arr, fg_labels, aug_config, box_num):
-    base_img = bg_arr[0]
-    stacked_im, annot_im = generate_stacked_img(base_img, fg_arr, fg_labels,
-                                                aug_config, box_num)
+    # base_img = bg_arr[0]
+    stacked_im, annot_im, base_img = generate_stacked_img(bg_arr, fg_arr,
+                                                        fg_labels,
+                                                        aug_config, box_num)
 
     src1 = base_img
     src2 = stacked_im

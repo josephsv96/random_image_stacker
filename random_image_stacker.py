@@ -241,3 +241,16 @@ def overlay_images(src1, src2):
         dst[:, :, i] = np.add(src1[:, :, i] * mask, src2[:, :, i])
 
     return dst
+
+
+def random_overlay(bg_arr, fg_arr, fg_labels, aug_config, box_num):
+    base_img = bg_arr[0]
+    stacked_im, annot_im = generate_stacked_img(base_img, fg_arr, fg_labels,
+                                                aug_config, box_num)
+
+    src1 = base_img
+    src2 = stacked_im
+
+    output_img = overlay_images(src1, src2)
+
+    return output_img, annot_im

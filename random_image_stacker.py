@@ -6,6 +6,7 @@ The main program relies on the alpha channel to make the annotation.
 
 import numpy as np
 import cv2
+from tqdm import tqdm
 # import imgaug
 # import glob
 # import random
@@ -101,7 +102,9 @@ def labels_from_file(img_dir, delim='_'):
     labels_unique, labels = np.unique(cat_labels, return_inverse=True)
 
     # Config
-    label_config_keys = np.unique(labels) + 1
+    label_config_keys = list(np.unique(labels) + 1)
+    # To convert keys from int64 to int
+    label_config_keys = [int(i) for i in label_config_keys]
     label_config = dict(zip(label_config_keys, labels_unique))
 
     return labels+1, label_config
@@ -135,8 +138,6 @@ def rand_pos_gen(aug_config):
 
     return [x_init, y_init, w_rand, h_rand]
 
-
-# Should also return box label
 
 def random_box(img_arr, img_labels):
     # ADD LABELS ARRAY AS ARGUMENT HERE
@@ -248,8 +249,8 @@ def overlay_images(src1, src2):
 def random_overlay(bg_arr, fg_arr, fg_labels, aug_config, box_num):
     # base_img = bg_arr[0]
     stacked_im, annot_im, base_img = generate_stacked_img(bg_arr, fg_arr,
-                                                        fg_labels,
-                                                        aug_config, box_num)
+                                                        fg_labels, aug_config,
+                                                        box_num)
 
     src1 = base_img
     src2 = stacked_im
@@ -257,3 +258,16 @@ def random_overlay(bg_arr, fg_arr, fg_labels, aug_config, box_num):
     output_img = overlay_images(src1, src2)
 
     return output_img, annot_im
+
+
+def random_img_gen(bg_arr, fg_arr, fg_labels, aug_config, box_num, gen_num):
+    image_set = np.zeros([gen_num, bg_arr.shape[1], bg_arr.shape[2], 3])
+    label_set = np.zeros([gen_num, bg_arr.shape[1], bg_arr.shape[2], 1])
+    for i in tqdm(range(gen_num)):
+        merged_im, annot = random_overlay(bg_arr, fg_arr, fg_labels,
+                                            aug_config, box_num)
+
+        image_set[i, :, :, :] = merged_im
+        label_set[i, :, :, 0] = annot
+
+    return image_set, label_set
